@@ -1,0 +1,1019 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Докшицкий Локатор - геолокация по фото</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/exifreader@4.50.0/dist/exif-reader.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 400;
+      background-color: #FFFFFF;
+      color: #2D2D2D;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+
+    .fade-in {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: fadeIn 0.7s ease forwards;
+    }
+    @keyframes fadeIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 40px 0;
+    }
+
+    .logo { font-weight: 600; font-size: 26px; letter-spacing: 1px; }
+
+    .zone-badge {
+      background-color: #4F81BD;
+      color: #FFFFFF;
+      padding: 8px 18px;
+      border-radius: 50px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .drop-zone {
+      border: 2px dashed #E0E0E0;
+      border-radius: 16px;
+      padding: 60px 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.active {
+      border-color: #4F81BD;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+
+    .drop-zone .main-text { font-size: 18px; font-weight: 400; color: #2D2D2D; }
+    .drop-zone .hint { margin-top: 10px; font-size: 13px; color: #888; }
+
+    #fileInput { display: none; }
+
+    .preview-area {
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .preview-area img {
+      max-width: 200px;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+
+    .analyze-btn {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 600;
+      font-size: 16px;
+      color: #FFFFFF;
+      background-color: #4F81BD;
+      border: none;
+      border-radius: 50px;
+      padding: 16px 40px;
+      cursor: pointer;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+
+    .analyze-btn:hover:not(:disabled) { transform: scale(1.02); background-color: #3F6CA6; }
+    .analyze-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #FFFFFF;
+      border-top-color: transparent;
+      border-radius: 50%;
+      vertical-align: middle;
+      margin-right: 8px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .clues-section { margin-top: 24px; }
+    .clues-label { font-size: 14px; font-weight: 600; color: #2D2D2D; margin-bottom: 4px; }
+    .clues-question { font-size: 13px; font-weight: 300; color: #888; margin-bottom: 12px; }
+
+    .clues-row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .clue-field { flex: 1; min-width: 240px; }
+
+    .clue-field label {
+      display: block;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 6px;
+    }
+
+    .clue-field select,
+    .clue-field input[type="text"] {
+      width: 100%;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 400;
+      font-size: 15px;
+      color: #2D2D2D;
+      background-color: #FFFFFF;
+      border: 2px solid #E0E0E0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      outline: none;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+      appearance: none;
+    }
+
+    .clue-field select:focus,
+    .clue-field input[type="text"]:focus {
+      border-color: #4F81BD;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+
+    .clue-field select {
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 16px center;
+    }
+
+    section { margin-top: 60px; }
+    section h2 { font-weight: 600; font-size: 22px; margin-bottom: 24px; }
+
+    #map {
+      height: 500px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      z-index: 1;
+    }
+
+    .leaflet-popup-content { margin: 12px 14px; }
+    .leaflet-popup-content-wrapper { border-radius: 12px; padding: 4px; }
+
+    .popup-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #2D2D2D;
+      margin-bottom: 4px;
+      line-height: 1.4;
+    }
+
+    .popup-src { font-size: 11px; color: #888; margin-bottom: 6px; }
+
+    .popup-hr {
+      border: none;
+      border-top: 1px solid #eee;
+      margin: 8px 0;
+    }
+
+    .popup-body {
+      font-size: 12px;
+      line-height: 1.55;
+      color: #444;
+      white-space: pre-line;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+
+    .popup-body::-webkit-scrollbar { width: 6px; }
+    .popup-body::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+    .popup-body::-webkit-scrollbar-track { background: transparent; }
+
+    .carousel {
+      position: relative;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      overflow: hidden;
+      background-color: #FAFAFA;
+    }
+
+    .slides { position: relative; height: 220px; }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 40px 60px;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+    }
+
+    .slide.visible { opacity: 1; pointer-events: auto; }
+
+    .slide h3 {
+      font-weight: 600;
+      font-size: 20px;
+      margin-bottom: 10px;
+      color: #4F81BD;
+    }
+
+    .slide p { font-weight: 300; font-size: 16px; }
+
+    .carousel-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px;
+      height: 44px;
+      border: none;
+      border-radius: 50%;
+      background-color: rgba(45,45,45,0.35);
+      color: #FFFFFF;
+      font-size: 18px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.25s ease, background-color 0.25s ease;
+      z-index: 2;
+    }
+
+    .carousel:hover .carousel-btn { opacity: 1; }
+    .carousel-btn:hover { background-color: rgba(79,129,189,0.8); }
+    .carousel-btn.prev { left: 16px; }
+    .carousel-btn.next { right: 16px; }
+
+    .dots {
+      position: absolute;
+      bottom: 14px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #E0E0E0;
+      cursor: pointer;
+    }
+
+    .dot.active { background-color: #4F81BD; }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background-color: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal-card {
+      background-color: #FFFFFF;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      padding: 48px;
+      max-width: 420px;
+      text-align: center;
+    }
+
+    .modal-card h3 {
+      color: #D9534F;
+      font-weight: 600;
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+
+    .modal-card p { font-weight: 300; margin-bottom: 24px; }
+
+    .modal-close-btn {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 600;
+      color: #FFFFFF;
+      background-color: #4F81BD;
+      border: none;
+      border-radius: 50px;
+      padding: 12px 32px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    .modal-close-btn:hover { background-color: #3F6CA6; }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background-color: #2D2D2D;
+      color: #FFFFFF;
+      padding: 16px 28px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      font-size: 14px;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 2000;
+      pointer-events: none;
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 600px) {
+      header { flex-direction: column; gap: 12px; padding: 24px 0; }
+      .container { padding: 24px 16px; }
+      .drop-zone { padding: 40px 20px; }
+      .slide { padding: 24px 24px; }
+      .slides { height: 260px; }
+      #map { height: 380px; }
+      .popup-body { max-height: 180px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <header class="fade-in">
+      <div class="logo">ДОКШИЦЫ LOCATOR</div>
+      <div class="zone-badge" id="zoneBadge">Зона: Докшицкий р-н</div>
+    </header>
+
+    <section class="fade-in" style="animation-delay: 0.1s;">
+      <div class="drop-zone" id="dropZone">
+        <div class="main-text">Перетащите фото сюда или кликните для выбора</div>
+        <div class="hint">Поддерживаются JPG, PNG. Максимальный размер 5 МБ</div>
+      </div>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png">
+
+      <div class="clues-section">
+        <div class="clues-label">Add a few clues (Optional)</div>
+        <div class="clues-question">В какой стране/городе, по вашему мнению, было сделано фото?</div>
+        <div class="clues-row">
+          <div class="clue-field">
+            <label for="regionSelect">Район</label>
+            <select id="regionSelect">
+              <option value="Не указано">Не указано</option>
+              <option value="Докшицкий район" selected>Докшицкий район</option>
+              <option value="Витебский район">Витебский район</option>
+              <option value="Полоцкий район">Полоцкий район</option>
+              <option value="Оршанский район">Оршанский район</option>
+              <option value="Лепельский район">Лепельский район</option>
+              <option value="Глубокский район">Глубокский район</option>
+              <option value="Минский район">Минский район</option>
+              <option value="Брестский район">Брестский район</option>
+              <option value="Гродненский район">Гродненский район</option>
+              <option value="Гомельский район">Гомельский район</option>
+              <option value="Могилёвский район">Могилёвский район</option>
+            </select>
+          </div>
+          <div class="clue-field">
+            <label for="clueInput">Ваша подсказка (необязательно)</label>
+            <input type="text" id="clueInput" placeholder="Например: берег реки, лес, мост…">
+          </div>
+        </div>
+      </div>
+
+      <div class="preview-area" id="previewArea" style="display: none;">
+        <img id="previewImg" alt="Превью фото">
+        <button class="analyze-btn" id="analyzeBtn">Распознать место</button>
+      </div>
+    </section>
+
+    <section class="fade-in" style="animation-delay: 0.2s;">
+      <h2>Карта</h2>
+      <div id="map"></div>
+    </section>
+
+    <section class="fade-in" style="animation-delay: 0.3s;">
+      <h2>О сервисе</h2>
+      <div class="carousel" id="carousel">
+        <div class="slides">
+          <div class="slide visible">
+            <h3>Как это работает</h3>
+            <p>Загрузите фотографию — нейросеть сравнит визуальные признаки кадра
+               (архитектуру, природу, дорожную обстановку) с базой геоданных
+               и определит, где сделан снимок.</p>
+          </div>
+          <div class="slide">
+            <h3>Точность геолокации</h3>
+            <p>В пределах зоны обслуживания координаты определяются с точностью
+               до сотен метров. Каждое найденное место отображается маркером
+               на карте с описанием.</p>
+          </div>
+          <div class="slide">
+            <h3>Защита зоны</h3>
+            <p>Сервис работает только внутри выбранных районов Беларуси.
+               Фото из других мест будут отмечены как вне зоны обслуживания.</p>
+          </div>
+        </div>
+        <button class="carousel-btn prev" id="carouselPrev">‹</button>
+        <button class="carousel-btn next" id="carouselNext">›</button>
+        <div class="dots" id="carouselDots"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-card">
+      <h3>❗ Вне зоны обслуживания</h3>
+      <p id="modalText">К сожалению, это место находится вне зоны обслуживания Докшицкого района</p>
+      <button class="modal-close-btn" id="modalCloseBtn">Закрыть</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="photos/monuments-data.js"></script>
+
+  <script>
+    var SERVER_URL = 'http://localhost:3000/analyze-image';
+    var SERVER_TIMEOUT_MS = 8000;
+
+    var REGIONS = {
+      'Не указано':        { center: [53.9000, 28.0000], bbox: { minLat: 51.20, maxLat: 56.22, minLng: 23.10, maxLng: 32.82 } },
+      'Докшицкий район':   { center: [55.0500, 28.4000], bbox: { minLat: 54.55, maxLat: 55.45, minLng: 27.90, maxLng: 28.90 } },
+      'Витебский район':   { center: [55.1900, 30.2000], bbox: { minLat: 55.05, maxLat: 55.35, minLng: 30.00, maxLng: 30.40 } },
+      'Полоцкий район':    { center: [55.4883, 28.7658], bbox: { minLat: 55.30, maxLat: 55.70, minLng: 28.55, maxLng: 29.05 } },
+      'Оршанский район':   { center: [54.5100, 30.4100], bbox: { minLat: 54.35, maxLat: 54.65, minLng: 30.20, maxLng: 30.60 } },
+      'Лепельский район':  { center: [54.6800, 28.7000], bbox: { minLat: 54.50, maxLat: 54.85, minLng: 28.40, maxLng: 28.90 } },
+      'Глубокский район':  { center: [55.1500, 27.9700], bbox: { minLat: 55.05, maxLat: 55.40, minLng: 27.60, maxLng: 28.10 } },
+      'Минский район':     { center: [53.9000, 27.5600], bbox: { minLat: 53.70, maxLat: 54.10, minLng: 27.20, maxLng: 27.90 } },
+      'Брестский район':   { center: [52.1000, 23.7000], bbox: { minLat: 51.90, maxLat: 52.40, minLng: 23.40, maxLng: 24.20 } },
+      'Гродненский район': { center: [53.6800, 23.8300], bbox: { minLat: 53.55, maxLat: 53.95, minLng: 23.60, maxLng: 24.20 } },
+      'Гомельский район':  { center: [52.4400, 30.9800], bbox: { minLat: 52.25, maxLat: 52.70, minLng: 30.60, maxLng: 31.30 } },
+      'Могилёвский район': { center: [53.9000, 30.3300], bbox: { minLat: 53.70, maxLat: 54.15, minLng: 29.90, maxLng: 30.60 } }
+    };
+
+    var BELARUS_BOUNDS = [
+      [51.20, 23.10],
+      [56.22, 32.82]
+    ];
+
+    var MONUMENTS = [
+      { file: 'voinskoe_4119',         name: 'Воинское захоронение № 4119, г. Докшицы, пл. Полевого', lat: 55.3167, lon: 28.4167, hash: null, description: '' },
+      { file: 'voinskoe_4117',         name: 'Воинское захоронение № 4117, г. Докшицы', lat: 55.3180, lon: 28.4150, hash: null, description: '' },
+      { file: 'bratskaya_mayakovskogo', name: 'Братская могила, место массового расстрела еврейского населения, г. Докшицы, ул. Маяковского', lat: 55.3150, lon: 28.4200, hash: null, description: '' },
+      { file: 'obelisk_277',           name: 'Обелиск воинам 277-ой стрелковой дивизии, г. Докшицы', lat: 55.3170, lon: 28.4140, hash: null, description: '' },
+      { file: 'bratskaya_7841',        name: 'Братская могила № 7841, г. Докшицы, кладбище «Блонь»', lat: 55.3100, lon: 28.4100, hash: null, description: '' },
+      { file: 'zahoronenie_8014',      name: 'Захоронение жертв войны № 8014, г. Докшицы, кладбище «Блонь»', lat: 55.3095, lon: 28.4095, hash: null, description: '' },
+      { file: 'yanki',                 name: 'Памятник землякам, д. Янки', lat: 55.2833, lon: 28.3333, hash: null, description: '' },
+      { file: 'krasnoe_berezino',      name: 'Памятник землякам, д. Красное Березино', lat: 55.2700, lon: 28.3100, hash: null, description: '' },
+      { file: 'barsuki',               name: 'Памятник землякам, аг. Барсуки', lat: 55.2500, lon: 28.3500, hash: null, description: '' },
+      { file: 'komaysk',               name: 'Памятник землякам, д. Комайск', lat: 55.2600, lon: 28.4500, hash: null, description: '' },
+      { file: 'bratskaya_2204',        name: 'Братская могила № 2204, г.п. Бегомль', lat: 54.7342, lon: 28.0556, hash: null, description: '' },
+      { file: 'begoml_fashizm',        name: 'Памятник жертвам фашизма, г.п. Бегомль', lat: 54.7330, lon: 28.0540, hash: null, description: '' },
+      { file: 'begoml_sovetskaya',     name: 'Памятное место, г.п. Бегомль, ул. Советская', lat: 54.7350, lon: 28.0570, hash: null, description: '' },
+      { file: 'begoml_yuhnovtsa',      name: 'Памятный знак на месте расстрела подпольщиков, г.п. Бегомль, ул. Юхновца', lat: 54.7320, lon: 28.0560, hash: null, description: '' },
+      { file: 'brigada_zheleznyak',    name: 'Памятник партизанской бригаде «Железняк», г.п. Бегомль', lat: 54.7345, lon: 28.0550, hash: null, description: '' },
+      { file: 'mankovich',             name: 'Бюст С.С. Манковичу, г.п. Бегомль', lat: 54.7338, lon: 28.0548, hash: null, description: '' },
+      { file: 'begoml_pogibshim',      name: 'Памятник погибшим землякам, г.п. Бегомль', lat: 54.7340, lon: 28.0555, hash: null, description: '' },
+      { file: 'aerodrom',              name: 'Обелиск «Партизанский аэродром», г.п. Бегомль', lat: 54.7450, lon: 28.0500, hash: null, description: '' },
+      { file: 'bratskaya_7474',        name: 'Братская могила № 7474, д. Марговица', lat: 54.7500, lon: 28.0900, hash: null, description: '' },
+      { file: 'bratskaya_7255',        name: 'Братская могила № 7255, д. Сосновая', lat: 54.7300, lon: 28.0400, hash: null, description: '' },
+      { file: 'yuhnovka',              name: 'Памятник партизанской славы, д. Юхновка', lat: 54.7280, lon: 28.0700, hash: null, description: '' },
+      { file: 'shunevka',              name: 'Мемориальный комплекс «Шуневка», урочище «Шуневка»', lat: 54.7800, lon: 28.0500, hash: null, description: '' },
+      { file: 'prudniki',              name: 'Памятник землякам, аг. Прудники', lat: 55.2600, lon: 28.5200, hash: null, description: '' },
+      { file: 'osovy',                 name: 'Памятник жертвам фашизма, д. Осовы', lat: 55.2900, lon: 28.3800, hash: null, description: '' },
+      { file: 'milkun',                name: 'Памятник землякам, д. Милькунь', lat: 55.2900, lon: 28.4300, hash: null, description: '' },
+      { file: 'zahoronenie_7955',      name: 'Захоронение жертв войны № 7955, д. Милькунь', lat: 55.2895, lon: 28.4305, hash: null, description: '' },
+      { file: 'budilovka',             name: 'Мемориальный комплекс, д. Будиловка', lat: 55.2800, lon: 28.4400, hash: null, description: '' },
+      { file: 'glinnoe',               name: 'Памятник землякам, д. Глинное', lat: 55.3000, lon: 28.3900, hash: null, description: '' },
+      { file: 'pustoselie',            name: 'Памятник землякам, д. Пустоселье', lat: 55.3100, lon: 28.4000, hash: null, description: '' },
+      { file: 'berezino',              name: 'Памятник землякам, д. Березино', lat: 55.2700, lon: 28.3200, hash: null, description: '' },
+      { file: 'volberovichi',          name: 'Памятник землякам, д. Вольберовичи', lat: 55.3400, lon: 28.4100, hash: null, description: '' },
+      { file: 'lipsk',                 name: 'Памятник землякам, д. Липск', lat: 55.3300, lon: 28.4500, hash: null, description: '' },
+      { file: 'ulesie_zvonok',         name: 'Памятник на месте прорыва блокады партизанами бригады «Железняк», д. Улесье, урочище «Звонок»', lat: 55.3000, lon: 28.5000, hash: null, description: '' },
+      { file: 'fedorii',               name: 'Памятное место, д. Федорки', lat: 55.2800, lon: 28.4600, hash: null, description: '' },
+      { file: 'shalagiry',             name: 'Могила подпольщиков Никоновой А.А. и Новицкой А.Л., д. Шалагиры', lat: 55.3200, lon: 28.4200, hash: null, description: '' },
+      { file: 'zarechick',             name: 'Могила подпольщиков Гаврилович М.А. и Демидович М.В., д. Заречицк', lat: 55.3100, lon: 28.3900, hash: null, description: '' },
+      { file: 'tumilovichi',           name: 'Памятник землякам, д. Тумиловичи', lat: 55.3500, lon: 28.3800, hash: null, description: '' },
+      { file: 'nesterovschina',        name: 'Памятник землякам, д. Нестеровщина', lat: 55.1500, lon: 28.5000, hash: null, description: '' },
+      { file: 'rechnye',               name: 'Памятник землякам, д. Речные', lat: 55.2000, lon: 28.5500, hash: null, description: '' },
+      { file: 'gornovo',               name: 'Памятное место, д. Горново', lat: 55.2500, lon: 28.4000, hash: null, description: '' },
+      { file: 'torguny',               name: 'Памятник землякам, аг. Торгуны', lat: 55.2500, lon: 28.5500, hash: null, description: '' },
+      { file: 'bratskaya_2203',        name: 'Братская могила № 2203, аг. Березки', lat: 55.0500, lon: 28.6500, hash: null, description: '' },
+      { file: 'bratskaya_2202',        name: 'Братская могила № 2202, д. Витуничи', lat: 55.1000, lon: 28.6000, hash: null, description: '' },
+      { file: 'bratskaya_2201',        name: 'Братская могила № 2201, д. Старое Запонье, урочище «Калюга»', lat: 55.1000, lon: 28.5500, hash: null, description: '' },
+      { file: 'bratskaya_7253',        name: 'Братская могила № 7253, д. Вилейка', lat: 55.0500, lon: 28.5500, hash: null, description: '' },
+      { file: 'bratskaya_7254',        name: 'Братская могила № 7254, д. Жамойск', lat: 55.0500, lon: 28.5500, hash: null, description: '' },
+      { file: 'dormontovo',            name: 'Памятник землякам, д. Дормонтово', lat: 55.2000, lon: 28.6000, hash: null, description: '' },
+      { file: 'chernysh',              name: 'Памятник А.И. Чернышу, аг. Березки', lat: 55.0510, lon: 28.6510, hash: null, description: '' },
+      { file: 'gorodische',            name: 'Памятник землякам, д. Городище', lat: 55.2500, lon: 28.4500, hash: null, description: '' },
+      { file: 'stanislavcy',           name: 'Памятник землякам, д. Станиславцы', lat: 55.2800, lon: 28.3500, hash: null, description: '' },
+      { file: 'zagatie',               name: 'Памятник землякам, д. Загатье', lat: 55.1500, lon: 28.4500, hash: null, description: '' },
+      { file: 'volkolata',             name: 'Памятник землякам, аг. Волколата', lat: 55.2000, lon: 28.3500, hash: null, description: '' },
+      { file: 'bratskaya_4118',        name: 'Братская могила № 4118, аг. Парафьяново', lat: 55.2167, lon: 28.7000, hash: null, description: '' },
+      { file: 'bratskaya_5594',        name: 'Братская могила № 5594, аг. Парафьяново', lat: 55.2160, lon: 28.6990, hash: null, description: '' },
+      { file: 'zolotuhi',              name: 'Памятник на месте сожжённой деревни Золотухи', lat: 55.2500, lon: 28.5000, hash: null, description: '' },
+      { file: 'yurkovschina',          name: 'Памятник землякам, д. Юрковщина', lat: 55.2000, lon: 28.5000, hash: null, description: '' },
+      { file: 'azarchy',               name: 'Памятник на месте сожжённой деревни Азарцы', lat: 55.2500, lon: 28.4500, hash: null, description: '' },
+      { file: 'sitcy',                 name: 'Памятник землякам, аг. Ситцы', lat: 55.2833, lon: 28.5333, hash: null, description: '' },
+      { file: 'hodorovka',             name: 'Место массового уничтожения № 5593, урочище «Ходоровка»', lat: 55.2000, lon: 28.4000, hash: null, description: '' },
+      { file: 'porplische',            name: 'Памятник землякам, аг. Порплище', lat: 55.2500, lon: 28.4500, hash: null, description: '' },
+      { file: 'krulevschina',          name: 'Памятник землякам, аг. Крулевщина', lat: 55.2333, lon: 28.7333, hash: null, description: '' },
+      { file: 'molozhane_avi',         name: 'Обелиск в память о героизме лётчиков 132-го авиаполка, д. Моложане', lat: 55.3000, lon: 28.4000, hash: null, description: '' },
+      { file: 'molozhane_dzhan',       name: 'Могила Джанджгава Григория Эрастовича № 7840, д. Моложане', lat: 55.3005, lon: 28.4010, hash: null, description: '' },
+      { file: 'berezovka',             name: 'Памятник землякам, д. Березовка', lat: 55.3500, lon: 28.4200, hash: null, description: '' },
+      { file: 'sev_gnezdilovo',        name: 'Памятник землякам, д. Северное Гнездилово', lat: 55.3000, lon: 28.3000, hash: null, description: '' },
+      { file: 'kripuli',               name: 'Памятник землякам, д. Крипули', lat: 55.3300, lon: 28.3500, hash: null, description: '' },
+      { file: 'evreiskoe_doksh',       name: 'Еврейское кладбище, г. Докшицы', lat: 55.3150, lon: 28.4150, hash: null, description: '' },
+      { file: 'beresnevka',            name: 'Бюст Героя Советского Союза Юхновца А.Г., д. Береснёвка', lat: 55.3200, lon: 28.4500, hash: null, description: '' },
+      { file: 'st_krulevschina',       name: 'Памятное место, ст. Крулевщина', lat: 55.2400, lon: 28.7300, hash: null, description: '' },
+      { file: 'dokshitsy_center',      name: 'Центр Докшиц, главная площадь', lat: 55.3167, lon: 28.4167, hash: null, description: '' },
+      { file: 'lesnaya_street',        name: 'Улица Лесная, жилой квартал', lat: 55.3200, lon: 28.4000, hash: null, description: '' },
+      { file: 'naroch_lake',           name: 'Озеро Нарочь (вне зоны Докшицкого района)', lat: 54.8500, lon: 26.7333, hash: null, description: '' },
+      { file: 'vokzal_dokshitsy',      name: 'Железнодорожный вокзал Докшиц', lat: 55.3050, lon: 28.3900, hash: null, description: '' },
+      { file: 'park_oktyabrsky',       name: 'Парк «Октябрьский»', lat: 55.3300, lon: 28.4200, hash: null, description: '' },
+      { file: 'vitebsk_dvina',         name: 'Набережная Западной Двины, Витебск', lat: 55.1900, lon: 30.2000, hash: null, description: '' },
+      { file: 'polotsk_sophia',        name: 'Софийский собор, Полоцк', lat: 55.4883, lon: 28.7658, hash: null, description: '' },
+      { file: 'orsha_station',         name: 'Вокзал Орши', lat: 54.5100, lon: 30.4100, hash: null, description: '' }
+    ];
+
+    if (window.MONUMENTS_DATA) {
+      for (var mi = 0; mi < MONUMENTS.length; mi++) {
+        var md = window.MONUMENTS_DATA[MONUMENTS[mi].file];
+        if (md) {
+          if (md.hash) MONUMENTS[mi].hash = md.hash;
+          if (md.description) MONUMENTS[mi].description = md.description;
+        }
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    var toastTimeout = null;
+
+    function showToast(text) {
+      var toast = document.getElementById('toast');
+      toast.textContent = text;
+      toast.classList.add('show');
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(function () {
+        toast.classList.remove('show');
+      }, 3500);
+    }
+
+    function openModal(regionName) {
+      var text = (regionName === 'Не указано')
+        ? 'К сожалению, это место находится вне зоны обслуживания (вне Беларуси)'
+        : 'К сожалению, это место находится вне зоны обслуживания ' + regionName;
+      document.getElementById('modalText').textContent = text;
+      document.getElementById('modalOverlay').classList.add('open');
+    }
+
+    function closeModal() {
+      document.getElementById('modalOverlay').classList.remove('open');
+    }
+
+    document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+    document.getElementById('modalOverlay').addEventListener('click', function (e) {
+      if (e.target === this) closeModal();
+    });
+
+    function inRegion(lat, lon, regionName) {
+      var region = REGIONS[regionName];
+      if (!region) return false;
+      var b = region.bbox;
+      return lat >= b.minLat && lat <= b.maxLat && lon >= b.minLng && lon <= b.maxLng;
+    }
+
+    function hamming(a, b) {
+      if (!a || !b || a.length !== b.length) return 64;
+      var n = 0;
+      for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+      return n;
+    }
+
+    function computeHash(file) {
+      return new Promise(function (resolve) {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        img.onload = function () {
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = 9;
+            canvas.height = 8;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, 9, 8);
+            var data = ctx.getImageData(0, 0, 9, 8).data;
+            var bits = '';
+            for (var y = 0; y < 8; y++) {
+              for (var x = 0; x < 8; x++) {
+                var i1 = (y * 9 + x) * 4;
+                var i2 = (y * 9 + x + 1) * 4;
+                var g1 = 0.299 * data[i1] + 0.587 * data[i1 + 1] + 0.114 * data[i1 + 2];
+                var g2 = 0.299 * data[i2] + 0.587 * data[i2 + 1] + 0.114 * data[i2 + 2];
+                bits += g1 < g2 ? '1' : '0';
+              }
+            }
+            URL.revokeObjectURL(url);
+            resolve(bits);
+          } catch (e) {
+            URL.revokeObjectURL(url);
+            resolve(null);
+          }
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        };
+        img.src = url;
+      });
+    }
+
+    function matchByHash(hash) {
+      if (!hash) return null;
+      var best = null;
+      var bestDist = 64;
+      for (var i = 0; i < MONUMENTS.length; i++) {
+        var m = MONUMENTS[i];
+        if (!m.hash) continue;
+        var d = hamming(hash, m.hash);
+        if (d < bestDist) { bestDist = d; best = m; }
+      }
+      return bestDist <= 12 ? best : null;
+    }
+
+    function matchByName(filename) {
+      var base = filename.replace(/\.[^.]+$/, '').toLowerCase();
+      for (var i = 0; i < MONUMENTS.length; i++) {
+        if (MONUMENTS[i].file.toLowerCase() === base) return MONUMENTS[i];
+      }
+      return null;
+    }
+
+    async function readExif(file) {
+      try {
+        if (typeof ExifReader === 'undefined') return null;
+        var buffer = await file.arrayBuffer();
+        var tags = ExifReader.load(buffer);
+        var latTag = tags['GPSLatitude'];
+        var lonTag = tags['GPSLongitude'];
+        if (latTag && lonTag && latTag.description && lonTag.description) {
+          var lat = parseFloat(latTag.description);
+          var lon = parseFloat(lonTag.description);
+          if (!isNaN(lat) && !isNaN(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+            return {
+              lat: lat,
+              lon: lon,
+              description: 'Место определено по GPS-данным, сохранённым в фото (EXIF)',
+              source: 'exif'
+            };
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    async function analyzeOnClient(file, region) {
+      var exif = await readExif(file);
+      if (exif) {
+        if (inRegion(exif.lat, exif.lon, region)) {
+          return { success: true, lat: exif.lat, lon: exif.lon, description: exif.description, source: 'exif' };
+        }
+        return { success: false, error: 'out_of_zone' };
+      }
+
+      var hash = await computeHash(file);
+      var byHash = matchByHash(hash);
+      if (byHash) {
+        if (inRegion(byHash.lat, byHash.lon, region)) {
+          return {
+            success: true,
+            lat: byHash.lat,
+            lon: byHash.lon,
+            description: byHash.description || byHash.name,
+            file: byHash.file,
+            source: 'hash'
+          };
+        }
+        return { success: false, error: 'out_of_zone' };
+      }
+
+      var byName = matchByName(file.name);
+      if (byName) {
+        if (inRegion(byName.lat, byName.lon, region)) {
+          return {
+            success: true,
+            lat: byName.lat,
+            lon: byName.lon,
+            description: byName.description || byName.name,
+            file: byName.file,
+            source: 'mock'
+          };
+        }
+        return { success: false, error: 'out_of_zone' };
+      }
+
+      return { success: false, error: 'not_found' };
+    }
+
+    function fetchFromServer(file, region, clue) {
+      return new Promise(function (resolve, reject) {
+        var controller = new AbortController();
+        var timeout = setTimeout(function () { controller.abort(); }, SERVER_TIMEOUT_MS);
+
+        var formData = new FormData();
+        formData.append('photo', file);
+        formData.append('region', region);
+        formData.append('clue', clue);
+
+        fetch(SERVER_URL, { method: 'POST', body: formData, signal: controller.signal })
+          .then(function (response) {
+            clearTimeout(timeout);
+            if (!response.ok) {
+              return response.json().then(function (e) {
+                reject(new Error(e.error || 'Ошибка сервера'));
+              });
+            }
+            return response.json();
+          })
+          .then(function (data) { resolve(data); })
+          .catch(function (err) { clearTimeout(timeout); reject(err); });
+      });
+    }
+
+    var map = L.map('map', {
+      maxBounds: BELARUS_BOUNDS,
+      maxBoundsViscosity: 1.0,
+      minZoom: 6
+    }).setView([55.0500, 28.4000], 9);
+
+    var TILE_PROVIDERS = [
+      {
+        url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
+        options: { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }
+      },
+      {
+        url: 'https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
+        options: { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }
+      },
+      {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        options: { attribution: 'Tiles &copy; Esri', maxZoom: 19 }
+      }
+    ];
+
+    var currentTileLayer = null;
+    var currentProviderIndex = 0;
+
+    function switchTileProvider() {
+      if (currentTileLayer) map.removeLayer(currentTileLayer);
+      if (currentProviderIndex >= TILE_PROVIDERS.length) {
+        showToast('Не удалось загрузить карту. Проверьте интернет-соединение');
+        return;
+      }
+      var provider = TILE_PROVIDERS[currentProviderIndex];
+      currentTileLayer = L.tileLayer(provider.url, provider.options);
+      currentTileLayer.on('tileerror', function () {
+        currentProviderIndex++;
+        switchTileProvider();
+      });
+      currentTileLayer.addTo(map);
+    }
+
+    switchTileProvider();
+
+    var currentRegionName = 'Докшицкий район';
+    var zoneRect = null;
+
+    function drawRegionZone(regionName) {
+      if (zoneRect) map.removeLayer(zoneRect);
+      var b = REGIONS[regionName].bbox;
+      zoneRect = L.rectangle(
+        [[b.minLat, b.minLng], [b.maxLat, b.maxLng]],
+        { color: '#4F81BD', fillOpacity: 0.15, weight: 1 }
+      ).addTo(map);
+    }
+
+    drawRegionZone(currentRegionName);
+
+    var currentMarker = null;
+
+    function clearMarker() {
+      if (currentMarker) {
+        map.removeLayer(currentMarker);
+        currentMarker = null;
+      }
+    }
+
+    function placeMarker(lat, lon, description, source) {
+      clearMarker();
+
+      var sourceLabel;
+      if (source === 'api') sourceLabel = 'Источник: API';
+      else if (source === 'hash') sourceLabel = 'Источник: база памятников';
+      else if (source === 'exif') sourceLabel = 'Источник: EXIF';
+      else sourceLabel = 'Источник: Демо';
+
+      var fullText = String(description || '').trim();
+      var lines = fullText.split('\n').map(function (l) { return l.trim(); }).filter(function (l) { return l; });
+      var title = lines.length ? lines[0] : 'Памятник';
+      var body = lines.length > 1 ? lines.slice(1).join('\n') : '';
+
+      var html = '<div class="popup-title">' + escapeHtml(title) + '</div>';
+      html += '<div class="popup-src">' + escapeHtml(sourceLabel) + '</div>';
+      if (body) {
+        html += '<hr class="popup-hr">';
+        html += '<div class="popup-body">' + escapeHtml(body) + '</div>';
+      }
+
+      currentMarker = L.marker([lat, lon]).addTo(map);
+      currentMarker.bindPopup(html, {
+        maxWidth: 360,
+        autoPan: true,
+        autoPanPadding: [24, 24]
+      }).openPopup();
+
+      map.flyTo([lat, lon], 13, { animate: true, duration: 1.2 });
+    }
+
+    document.getElementById('regionSelect').addEventListener('change', function () {
+      currentRegionName = this.value;
+      var info = REGIONS[currentRegionName];
+      drawRegionZone(currentRegionName);
+      document.getElementById('zoneBadge').textContent = (currentRegionName === 'Не указано')
+        ? 'Зона: вся Беларусь'
+        : 'Зона: ' + currentRegionName.replace(' район', ' р-н');
+      map.flyTo(info.center, currentRegionName === 'Не указано' ? 7 : 9, { animate: true, duration: 1.2 });
+    });
+
+    var dropZone = document.getElementById('dropZone');
+    var fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', function () { fileInput.click(); });
+    dropZone.addEventListener('dragenter', function (e) { e.preventDefault(); dropZone.classList.add('active'); });
+    dropZone.addEventListener('dragover', function (e) { e.preventDefault(); dropZone.classList.add('active'); });
+    dropZone.addEventListener('dragleave', function (e) { e.preventDefault(); dropZone.classList.remove('active'); });
+    dropZone.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dropZone.classList.remove('active');
+      if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', function () {
+      if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
+    });
+
+    var selectedFile = null;
+
+    function handleFile(file) {
+      var allowed = ['image/jpeg', 'image/png'];
+      if (allowed.indexOf(file.type) === -1) {
+        showToast('Поддерживаются только файлы JPG и PNG');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('Файл больше 5 МБ. Выберите файл поменьше');
+        return;
+      }
+
+      selectedFile = file;
+      clearMarker();
+
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        document.getElementById('previewImg').src = e.target.result;
+        document.getElementById('previewArea').style.display = 'flex';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    document.getElementById('analyzeBtn').addEventListener('click', analyzeImage);
+
+    async function analyzeImage() {
+      if (!selectedFile) return;
+
+      var region = document.getElementById('regionSelect').value;
+      var clue = document.getElementById('clueInput').value;
+
+      var btn = document.getElementById('analyzeBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Анализ…';
+
+      try {
+        var serverResult = null;
+        try {
+          serverResult = await fetchFromServer(selectedFile, region, clue);
+        } catch (err) {
+          console.log('Сервер недоступен, работаем в офлайн-режиме:', err.message);
+        }
+
+        var clientResult = await analyzeOnClient(selectedFile, region);
+
+        var chosen = null;
+        if (serverResult && serverResult.success && serverResult.source === 'api') {
+          chosen = serverResult;
+        } else if (clientResult.success && clientResult.source === 'hash') {
+          chosen = clientResult;
+        } else if (serverResult && serverResult.success) {
+          chosen = serverResult;
+        } else if (clientResult.success) {
+          chosen = clientResult;
+        }
+
+        if (chosen) {
+          if (chosen.source === 'mock' && chosen.file) {
+            for (var k = 0; k < MONUMENTS.length; k++) {
+              if (MONUMENTS[k].file === chosen.file && MONUMENTS[k].description) {
+                chosen.description = MONUMENTS[k].description;
+                break;
+              }
+            }
+          }
+          placeMarker(chosen.lat, chosen.lon, chosen.description, chosen.source);
+          showToast('Место найдено!');
+          return;
+        }
+
+        var errCode = (clientResult && clientResult.error) || (serverResult && serverResult.error);
+        if (errCode === 'out_of_zone') {
+          clearMarker();
+          openModal(region);
+          return;
+        }
+
+        clearMarker();
+        showToast('Не удалось распознать место на фото');
+      } catch (err) {
+        console.error('Ошибка обработки:', err);
+        showToast('Произошла ошибка при обработке');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Распознать место';
+      }
+    }
+
+    var slides = document.querySelectorAll('.slide');
+    var dots = document.getElementById('carouselDots');
+    var currentSlide = 0;
+    var carouselInterval = null;
+
+    slides.forEach(function (_, i) {
+      var dot = document.createElement('div');
+      dot.className = 'dot' + (i === 0 ? ' active' : '');
+      dot.addEventListener('click', function () { goToSlide(i); });
+      dots.appendChild(dot);
+    });
+
+    function goToSlide(index) {
+      slides[currentSlide].classList.remove('visible');
+      dots.children[currentSlide].classList.remove('active');
+      currentSlide = (index + slides.length) % slides.length;
+      slides[currentSlide].classList.add('visible');
+      dots.children[currentSlide].classList.add('active');
+    }
+
+    function startAutoplay() {
+      if (carouselInterval) return;
+      carouselInterval = setInterval(function () { goToSlide(currentSlide + 1); }, 5000);
+    }
+
+    function stopAutoplay() {
+      if (carouselInterval) { clearInterval(carouselInterval); carouselInterval = null; }
+    }
+
+    document.getElementById('carouselPrev').addEventListener('click', function () { goToSlide(currentSlide - 1); });
+    document.getElementById('carouselNext').addEventListener('click', function () { goToSlide(currentSlide + 1); });
+
+    var carousel = document.getElementById('carousel');
+    carousel.addEventListener('mouseenter', stopAutoplay);
+    carousel.addEventListener('mouseleave', startAutoplay);
+
+    startAutoplay();
+  </script>
+
+</body>
+</html>

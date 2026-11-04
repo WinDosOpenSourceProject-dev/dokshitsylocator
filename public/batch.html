@@ -1,0 +1,327 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Batch - хеши и описания памятников</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 860px; margin: 40px auto; padding: 20px; background: #f8f9fb; color: #2D2D2D; }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  p.sub { color: #666; margin-bottom: 24px; font-size: 14px; line-height: 1.6; }
+  .step { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .step h2 { font-size: 15px; margin-bottom: 8px; color: #4F81BD; }
+  button { background: #4F81BD; color: #fff; border: none; padding: 12px 24px; border-radius: 50px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  button:hover { background: #3F6CA6; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: #888; }
+  #progress { margin-top: 16px; font-family: ui-monospace, monospace; font-size: 12px; max-height: 400px; overflow-y: auto; background: #fafafa; padding: 12px; border-radius: 8px; line-height: 1.5; white-space: pre-wrap; }
+  #progress .ok { color: #2a8c3b; }
+  #progress .err { color: #c0392b; }
+  #progress .warn { color: #d68910; }
+  #progress .dim { color: #888; }
+  #progress .head { color: #4F81BD; font-weight: 600; }
+  textarea { width: 100%; min-height: 200px; font-family: monospace; font-size: 12px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; margin-top: 12px; box-sizing: border-box; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .info { font-size: 13px; color: #888; line-height: 1.6; }
+  code { background: #eef; padding: 2px 6px; border-radius: 4px; font-size: 0.92em; }
+  ul { margin: 8px 0 0 20px; padding: 0; }
+  li { font-size: 13px; color: #555; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Batch: хеши и описания</h1>
+<p class="sub">
+  Открой этот файл напрямую через <code>file://</code> в Chrome, Edge или Firefox.
+  Выбери папку — скрипт найдёт фото, хеши и <code>.txt</code> описания, а затем
+  скачает готовый <code>photos/monuments-data.js</code>.
+</p>
+
+<div class="step">
+  <h2>Шаг 1. Выбери папку</h2>
+  <div class="info">
+    Что можно выбрать (в порядке удобства):
+    <ul>
+      <li><b>Всю папку <code>photos/</code></b> — найдёт и <code>images/</code>, и <code>all/</code>, и <code>descriptions/</code>. Рекомендуется.</li>
+      <li><code>photos/all</code> — только фото (хеши посчитаются, описания подтянутся из старого файла).</li>
+      <li><code>photos/images</code> + отдельно <code>photos/descriptions</code> — выбери одну, потом вторую; данные склеятся по имени.</li>
+      <li>Любую плоскую папку с фото — имя файла станет именем памятника.</li>
+    </ul>
+  </div>
+  <div class="row" style="margin-top: 14px;">
+    <button id="pickDirBtn">Выбрать папку</button>
+    <button id="pickFilesBtn" class="secondary">Выбрать файлы</button>
+    <button id="resetBtn" class="secondary">Сбросить</button>
+    <input type="file" id="dirInput" webkitdirectory directory multiple style="display: none;">
+    <input type="file" id="filesInput" multiple accept="image/*,.txt" style="display: none;">
+  </div>
+</div>
+
+<div class="step">
+  <h2>Шаг 2. Прогресс</h2>
+  <div id="progress">—</div>
+</div>
+
+<div class="step">
+  <h2>Шаг 3. Результат</h2>
+  <p class="info">Скачай файл и замени старый <code>photos/monuments-data.js</code>.</p>
+  <div class="row" style="margin-top: 12px;">
+    <button id="downloadBtn" disabled>Скачать monuments-data.js</button>
+    <button id="copyBtn" class="secondary" disabled>Скопировать JSON</button>
+  </div>
+  <textarea id="resultBox" readonly placeholder="Здесь появится JSON после обработки..."></textarea>
+</div>
+
+<script src="photos/monuments-data.js" onerror="console.log('monuments-data.js не найден — старые описания не подтянутся')"></script>
+<script>
+(function () {
+  var dirInput = document.getElementById('dirInput');
+  var filesInput = document.getElementById('filesInput');
+  var progress = document.getElementById('progress');
+  var resultBox = document.getElementById('resultBox');
+  var downloadBtn = document.getElementById('downloadBtn');
+  var copyBtn = document.getElementById('copyBtn');
+
+  var existing = window.MONUMENTS_DATA || {};
+
+  var collected = {
+    images: {},        // name -> [{ file, size, fromImages, fromAll, rel }]
+    descriptions: {}   // name -> полный текст
+  };
+
+  function log(text, cls) {
+    if (progress.textContent === '—') progress.innerHTML = '';
+    var div = document.createElement('div');
+    if (cls) div.className = cls;
+    div.textContent = text;
+    progress.appendChild(div);
+    progress.scrollTop = progress.scrollHeight;
+  }
+
+  function clearLog() { progress.innerHTML = '—'; }
+
+  function isImage(fileName) {
+    return /\.(jpe?g|png|gif|webp|bmp)$/i.test(fileName);
+  }
+  function isText(fileName) {
+    return /\.txt$/i.test(fileName);
+  }
+
+  function resolve(file) {
+    var rel = file.webkitRelativePath || file.name;
+    var parts = rel.split('/');
+    var fileName = parts[parts.length - 1];
+    var baseName = fileName.replace(/\.[^.]+$/, '').toLowerCase();
+    var lower = parts.map(function (s) { return s.toLowerCase(); });
+
+    if (isText(fileName)) {
+      return { kind: 'description', name: baseName, rel: rel };
+    }
+    if (!isImage(fileName)) return null;
+
+    var imgIdx = lower.indexOf('images');
+    var allIdx = lower.indexOf('all');
+
+    if (imgIdx >= 0 && imgIdx < parts.length - 1) {
+      return { kind: 'image', name: baseName, fromImages: true, fromAll: false, rel: rel };
+    }
+    if (allIdx >= 0 && allIdx + 1 < parts.length - 1) {
+      return { kind: 'image', name: parts[allIdx + 1].toLowerCase(), fromImages: false, fromAll: true, rel: rel };
+    }
+    if (parts.length >= 3) {
+      return { kind: 'image', name: parts[parts.length - 2].toLowerCase(), fromImages: false, fromAll: false, rel: rel };
+    }
+    return { kind: 'image', name: baseName, fromImages: false, fromAll: false, rel: rel };
+  }
+
+  async function collect(fileList) {
+    var added = { images: 0, descriptions: 0, skipped: 0 };
+    for (var i = 0; i < fileList.length; i++) {
+      var file = fileList[i];
+      var info = resolve(file);
+      if (!info) { added.skipped++; continue; }
+
+      if (info.kind === 'description') {
+        try {
+          var text = await file.text();
+          collected.descriptions[info.name] = text;
+          added.descriptions++;
+        } catch (e) { added.skipped++; }
+      } else {
+        if (!collected.images[info.name]) collected.images[info.name] = [];
+        collected.images[info.name].push({
+          file: file,
+          size: file.size,
+          fromImages: info.fromImages,
+          fromAll: info.fromAll,
+          rel: info.rel
+        });
+        added.images++;
+      }
+    }
+    return added;
+  }
+
+  function pickBest(name) {
+    var list = collected.images[name];
+    if (!list || !list.length) return null;
+    var pref = list.filter(function (x) { return x.fromImages; });
+    if (pref.length) return pref.slice().sort(function (a, b) { return b.size - a.size; })[0];
+    return list.slice().sort(function (a, b) { return b.size - a.size; })[0];
+  }
+
+  function loadImage(file) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function () { resolve({ img: img, url: url }); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('не читается')); };
+      img.src = url;
+    });
+  }
+
+  function dhash(img) {
+    var c = document.createElement('canvas');
+    c.width = 9;
+    c.height = 8;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, 9, 8);
+    var d = ctx.getImageData(0, 0, 9, 8).data;
+    var bits = '';
+    for (var y = 0; y < 8; y++) {
+      for (var x = 0; x < 8; x++) {
+        var a = (y * 9 + x) * 4;
+        var b = (y * 9 + x + 1) * 4;
+        var ga = 0.299 * d[a] + 0.587 * d[a + 1] + 0.114 * d[a + 2];
+        var gb = 0.299 * d[b] + 0.587 * d[b + 1] + 0.114 * d[b + 2];
+        bits += ga < gb ? '1' : '0';
+      }
+    }
+    return bits;
+  }
+
+  async function generate() {
+    downloadBtn.disabled = true;
+    copyBtn.disabled = true;
+    resultBox.value = '';
+
+    var imgNames = Object.keys(collected.images);
+    var descNames = Object.keys(collected.descriptions);
+    var allNames = {};
+
+    imgNames.forEach(function (n) { allNames[n] = true; });
+    descNames.forEach(function (n) { allNames[n] = true; });
+    Object.keys(existing).forEach(function (n) { allNames[n] = true; });
+
+    var names = Object.keys(allNames).sort();
+
+    log('');
+    log('=== Генерация ===', 'head');
+    log('Памятников с фото: ' + imgNames.length, 'dim');
+    log('Памятников с описанием: ' + descNames.length, 'dim');
+    log('Всего в итоговом файле: ' + names.length, 'dim');
+    log('');
+
+    var result = {};
+    var ok = 0;
+    var noHash = 0;
+    var noDesc = 0;
+
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      var best = pickBest(name);
+      var desc = collected.descriptions[name];
+
+      if (desc === undefined && existing[name] && existing[name].description) {
+        desc = existing[name].description;
+      }
+      if (desc === undefined) desc = '';
+
+      var hash = null;
+      var sourceFile = '';
+
+      if (best) {
+        sourceFile = best.file.name;
+        try {
+          var loaded = await loadImage(best.file);
+          hash = dhash(loaded.img);
+          URL.revokeObjectURL(loaded.url);
+        } catch (e) {
+          log('[' + (i + 1) + '/' + names.length + '] ' + name + ' — фото не читается: ' + e.message, 'err');
+        }
+      }
+
+      result[name] = {
+        hash: hash,
+        description: desc,
+        source_file: sourceFile
+      };
+
+      var flags = [];
+      if (hash) { flags.push('hash'); ok++; } else { flags.push('—'); noHash++; }
+      if (desc) flags.push('описание ' + desc.length + ' симв.'); else { noDesc++; }
+
+      var cls = hash && desc ? 'ok' : (hash ? 'warn' : 'err');
+      log('[' + (i + 1) + '/' + names.length + '] ' + name + '  →  ' + flags.join(', '), cls);
+    }
+
+    log('');
+    log('=== Итог: ' + ok + ' с хешем, ' + noHash + ' без хеша, ' + noDesc + ' без описания ===', noHash ? 'warn' : 'ok');
+
+    var json = JSON.stringify(result, null, 2);
+    resultBox.value = json;
+
+    var js = 'window.MONUMENTS_DATA = ' + json + ';\n';
+    var blob = new Blob([js], { type: 'application/javascript' });
+    var url = URL.createObjectURL(blob);
+
+    downloadBtn.disabled = false;
+    copyBtn.disabled = false;
+
+    downloadBtn.onclick = function () {
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'monuments-data.js';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+
+    copyBtn.onclick = function () {
+      resultBox.select();
+      document.execCommand('copy');
+      log('JSON скопирован в буфер', 'ok');
+    };
+  }
+
+  async function handleFiles(fileList, sourceLabel) {
+    clearLog();
+    log('Источник: ' + sourceLabel, 'head');
+    var added = await collect(fileList);
+    log('Добавлено: фото ' + added.images + ', описаний ' + added.descriptions + (added.skipped ? ', пропущено ' + added.skipped : ''), 'dim');
+    await generate();
+  }
+
+  document.getElementById('pickDirBtn').onclick = function () { dirInput.click(); };
+  document.getElementById('pickFilesBtn').onclick = function () { filesInput.click(); };
+  document.getElementById('resetBtn').onclick = function () {
+    collected = { images: {}, descriptions: {} };
+    clearLog();
+    resultBox.value = '';
+    downloadBtn.disabled = true;
+    copyBtn.disabled = true;
+    log('Сброшено. Можно выбирать папки заново.', 'dim');
+  };
+
+  dirInput.onchange = function () {
+    if (dirInput.files.length) handleFiles(dirInput.files, 'папка (' + dirInput.files.length + ' файлов)');
+    dirInput.value = '';
+  };
+  filesInput.onchange = function () {
+    if (filesInput.files.length) handleFiles(filesInput.files, 'файлы (' + filesInput.files.length + ' шт.)');
+    filesInput.value = '';
+  };
+})();
+</script>
+
+</body>
+</html>
